@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#6366f1">
+    <link rel="stylesheet" href="style.css">
+    <title>Annuaire Vocal Intelligent</title>
+</head>
+<body>
+    <div class="app-shell">
+        <header>
+            <div class="header-content">
+                <h1>IA Annuaire Groupe 12</h1>
+                <div class="search-container">
+                    <input type="text" id="search-bar" placeholder="Rechercher (ex: '22V...')">
+                </div>
+                <div class="status-bar">
+                    <span id="counter">0 membre(s)</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <section class="form-card">
+                <form id="student-form">
+                    <div class="input-grid">
+                        <input type="text" id="firstname" placeholder="Prénom" required>
+                        <input type="text" id="lastname" placeholder="NOM" required>
+                        <input type="text" id="matricule" placeholder="Matricule" required>
+                        <input type="tel" id="phone" placeholder="Téléphone" required>
+                    </div>
+                    
+                    <div class="upload-zone">
+                        <input type="file" id="photo" accept="image/*" required>
+                        <label for="photo" id="photo-label">
+                            <span class="icon">📸</span>
+                            <span id="file-name">Ajouter une photo</span>
+                        </label>
+                    </div>
+                    
+                    <button type="submit" id="submit-btn">Enregistrer</button>
+                </form>
+                <div id="ia-feedback" class="ia-alert" style="display:none;"></div>
+            </section>
+
+            <div id="student-list" class="student-grid"></div>
+        </main>
+
+        <!-- Commandes Vocales -->
+        <button id="voice-btn" class="mic-btn" title="Parler à l'IA">🎤</button>
+        
+        <div id="ai-response-overlay" class="overlay" style="display:none;">
+            <div class="ai-bubble">
+                <p id="ai-text-output"></p>
+                <button onclick="closeAI()" class="btn-close">D'accord</button>
+            </div>
+        </div>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
