@@ -2,13 +2,19 @@
 const form = document.getElementById('student-form');
 const grid = document.getElementById('student-list');
 const counter = document.getElementById('counter');
+const searchBar = document.getElementById('search-bar');
 const voiceBtn = document.getElementById('voice-btn');
 const aiOverlay = document.getElementById('ai-response-overlay');
 const aiTextOutput = document.getElementById('ai-text-output');
+const feedback = document.getElementById('ia-feedback');
 const photoInput = document.getElementById('photo');
+const fileNameLabel = document.getElementById('file-name');
+
+const STORAGE_KEY = 'annuaire_g12_permanent';
+const PHOTO_MAX_SIZE = 320; // côté le plus long, en pixels, pour ne pas saturer le localStorage
 
 // 2. ÉTAT DE L'APPLICATION
-let students = JSON.parse(localStorage.getItem('annuaire_g12_permanent')) || [];
+let students = loadData();
 let isFormMode = false; // Est-ce qu'on remplit le formulaire à la voix ?
 let formStep = 0; // À quelle étape du formulaire on est (0=Prénom, 1=Nom, etc.)
 
@@ -27,11 +33,17 @@ if (SpeechRecognition) {
 
     recognition.onstart = () => {
         voiceBtn.classList.add('active');
-        console.log("L'IA vous écoute...");
     };
 
     recognition.onend = () => {
         voiceBtn.classList.remove('active');
+    };
+
+    recognition.onerror = (event) => {
+        voiceBtn.classList.remove('active');
+        if (event.error === 'not-allowed') {
+            speakAndShow("Je n'ai pas accès au micro. Autorise-le dans les réglages du navigateur.");
+        }
     };
 
     recognition.onresult = (event) => {
@@ -40,20 +52,37 @@ if (SpeechRecognition) {
     };
 }
 
-// 4. LE CERVEAU DE L'IA (LOGIQUE GEMINI)
+function listen(delay) {
+    if (!recognition) return;
+    setTimeout(() => {
+        try { recognition.start(); } catch (e) { /* déjà en écoute */ }
+    }, delay);
+}
+
+// 4. LE CERVEAU DE L'IA
+function normalize(text) {
+    return String(text).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+function matches(student, query) {
+    const q = normalize(query);
+    if (!q) return true;
+    return [student.firstName, student.lastName, student.matricule, student.phone,
+        `${student.firstName} ${student.lastName}`, `${student.lastName} ${student.firstName}`]
+        .some(value => normalize(value).includes(q));
+}
+
 function handleVoiceCommand(input) {
-    const prompt = input.toLowerCase().trim();
-    console.log("IA a reçu :", prompt);
+    const prompt = normalize(input);
 
     // --- MODE FORMULAIRE VOCAL ---
     if (isFormMode) {
-        document.getElementById(fields[formStep]).value = input; // Remplit le champ actuel
+        document.getElementById(fields[formStep]).value = input.trim();
         formStep++;
 
         if (formStep < fields.length) {
             speakAndShow(`Bien reçu : ${input}. Quel est ${fieldLabels[formStep]} ?`);
-            // On relance le micro automatiquement pour l'étape suivante
-            setTimeout(() => recognition.start(), 2000);
+            listen(2500); // On relance le micro pour l'étape suivante
         } else {
             isFormMode = false;
             formStep = 0;
@@ -64,35 +93,37 @@ function handleVoiceCommand(input) {
 
     // --- MODE COMMANDES GÉNÉRALES ---
     // A. Lancer l'inscription
-    if (prompt.includes("inscrit") || prompt.includes("ajouter") || prompt.includes("remplir")) {
+    if (prompt.includes("inscri") || prompt.includes("ajoute") || prompt.includes("remplir")) {
         isFormMode = true;
         formStep = 0;
         speakAndShow("Très bien, commençons. Quel est le prénom de l'étudiant ?");
-        setTimeout(() => recognition.start(), 3000); // Laisse le temps à l'IA de parler
-    } 
+        listen(3000); // Laisse le temps à l'IA de parler
+    }
     // B. Chercher quelqu'un
     else if (prompt.includes("qui est") || prompt.includes("cherche") || prompt.includes("trouve")) {
         const target = prompt.replace(/qui est|cherche|trouve/g, "").trim();
-        const found = students.find(s => 
-            s.firstName.toLowerCase().includes(target) || 
-            s.lastName.toLowerCase().includes(target) ||
-            s.matricule.toLowerCase().includes(target)
-        );
+        const found = target ? students.filter(s => matches(s, target)) : [];
 
-        if (found) {
-            speakAndShow(`J'ai trouvé ${found.firstName} ${found.lastName}. Matricule ${found.matricule}.`);
-            render(students.filter(s => s.id === found.id)); // Affiche seulement lui
+        if (found.length === 1) {
+            const s = found[0];
+            speakAndShow(`J'ai trouvé ${s.firstName} ${s.lastName}. Matricule ${s.matricule}.`);
+        } else if (found.length > 1) {
+            speakAndShow(`J'ai trouvé ${found.length} personnes : ${found.map(s => s.firstName + " " + s.lastName).join(", ")}.`);
         } else {
             speakAndShow(`Désolé, je n'ai aucun "${target}" dans ma base de données.`);
+        }
+        if (found.length) {
+            searchBar.value = target;
+            render();
         }
     }
     // C. Statistiques
     else if (prompt.includes("combien") || prompt.includes("total") || prompt.includes("nombre")) {
-        speakAndShow(`Il y a actuellement ${students.length} membres enregistrés dans le Groupe 12.`);
+        speakAndShow(`Il y a actuellement ${students.length} membre${students.length > 1 ? 's' : ''} enregistré${students.length > 1 ? 's' : ''} dans le Groupe 12.`);
     }
     // D. Liste complète
     else if (prompt.includes("liste") || prompt.includes("quels sont les noms")) {
-        if(students.length === 0) return speakAndShow("La liste est vide.");
+        if (students.length === 0) return speakAndShow("La liste est vide.");
         const noms = students.map(s => s.firstName + " " + s.lastName).join(", ");
         speakAndShow(`Les étudiants sont : ${noms}.`);
     }
@@ -104,84 +135,187 @@ function handleVoiceCommand(input) {
 
 // 5. FONCTIONS DE PAROLE ET D'AFFICHAGE
 function speakAndShow(text) {
-    aiTextOutput.innerText = text;
+    aiTextOutput.textContent = text;
     aiOverlay.style.display = 'flex';
-    
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'fr-FR';
-    window.speechSynthesis.speak(utterance);
+
+    if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = 'fr-FR';
+        window.speechSynthesis.speak(utterance);
+    }
+}
+
+function showFeedback(text, isError = false) {
+    feedback.textContent = text;
+    feedback.classList.toggle('error', isError);
+    feedback.style.display = 'block';
+    clearTimeout(showFeedback.timer);
+    showFeedback.timer = setTimeout(() => { feedback.style.display = 'none'; }, 4000);
 }
 
 // 6. GESTION DE LA BASE DE DONNÉES (RENDU ET SAUVEGARDE)
-function render(dataToDisplay = students) {
-    grid.innerHTML = '';
-    dataToDisplay.forEach(s => {
-        grid.innerHTML += `
-            <div class="card">
-                <button class="btn-delete" onclick="deleteStudent(${s.id})">×</button>
-                <img src="${s.photo}">
-                <div class="card-info">
-                    <h3>${s.firstName} ${s.lastName}</h3>
-                    <p>Mat: ${s.matricule}</p>
-                    <p>Tél: ${s.phone}</p>
-                </div>
-            </div>
-        `;
-    });
-    counter.innerText = `${students.length} membre(s) enregistré(s)`;
+function createCard(s) {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const del = document.createElement('button');
+    del.className = 'btn-delete';
+    del.type = 'button';
+    del.title = 'Supprimer';
+    del.textContent = '×';
+    del.addEventListener('click', () => deleteStudent(s.id));
+
+    const img = document.createElement('img');
+    img.src = s.photo;
+    img.alt = `Photo de ${s.firstName} ${s.lastName}`;
+
+    const info = document.createElement('div');
+    info.className = 'card-info';
+    const name = document.createElement('h3');
+    name.textContent = `${s.firstName} ${s.lastName}`;
+    const mat = document.createElement('p');
+    mat.textContent = `Mat: ${s.matricule}`;
+    const tel = document.createElement('p');
+    tel.textContent = `Tél: ${s.phone}`;
+    info.append(name, mat, tel);
+
+    card.append(del, img, info);
+    return card;
 }
 
-window.deleteStudent = (id) => {
-    students = students.filter(s => s.id !== id);
+function render() {
+    const query = searchBar.value;
+    const visible = students.filter(s => matches(s, query));
+
+    grid.replaceChildren(...visible.map(createCard));
+
+    if (visible.length === 0) {
+        const empty = document.createElement('p');
+        empty.className = 'empty-state';
+        empty.textContent = students.length === 0
+            ? "Aucun membre pour l'instant. Remplis le formulaire ou dis « Inscrire un étudiant »."
+            : `Aucun résultat pour « ${query} ».`;
+        grid.append(empty);
+    }
+
+    const total = `${students.length} membre${students.length > 1 ? 's' : ''} enregistré${students.length > 1 ? 's' : ''}`;
+    counter.textContent = query.trim() ? `${visible.length} résultat(s) sur ${total}` : total;
+}
+
+function deleteStudent(id) {
+    const s = students.find(x => x.id === id);
+    if (!s || !confirm(`Supprimer ${s.firstName} ${s.lastName} ?`)) return;
+    students = students.filter(x => x.id !== id);
     saveData();
     render();
-};
+}
+
+function loadData() {
+    try {
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        return Array.isArray(data) ? data : [];
+    } catch (e) {
+        return [];
+    }
+}
 
 function saveData() {
-    localStorage.setItem('annuaire_g12_permanent', JSON.stringify(students));
+    try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(students));
+        return true;
+    } catch (e) {
+        return false; // Espace de stockage plein
+    }
+}
+
+// Réduit la photo avant de la stocker : une photo de téléphone pèse plusieurs Mo,
+// alors que le localStorage est limité à environ 5 Mo pour tout l'annuaire.
+function resizePhoto(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Lecture de la photo impossible."));
+        reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error("Ce fichier n'est pas une image valide."));
+            img.onload = () => {
+                const scale = Math.min(1, PHOTO_MAX_SIZE / Math.max(img.width, img.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.8));
+            };
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    });
 }
 
 // 7. FORMULAIRE (ENREGISTREMENT FINAL)
-form.addEventListener('submit', (e) => {
+form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const file = photoInput.files[0];
-    if (!file) return alert("Veuillez ajouter une photo !");
+    if (!file) return showFeedback("Ajoute une photo avant d'enregistrer.", true);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-        const newStudent = {
-            id: Date.now(),
-            firstName: document.getElementById('firstname').value,
-            lastName: document.getElementById('lastname').value.toUpperCase(),
-            matricule: document.getElementById('matricule').value,
-            phone: document.getElementById('phone').value,
-            photo: event.target.result
-        };
-        students.push(newStudent);
-        saveData();
-        render();
-        form.reset();
-        document.getElementById('photo-label').innerText = "📸 Photo ajoutée !";
+    const value = id => document.getElementById(id).value.trim();
+    const matricule = value('matricule');
+    if (students.some(s => normalize(s.matricule) === normalize(matricule))) {
+        return showFeedback(`Le matricule ${matricule} est déjà enregistré.`, true);
+    }
+
+    let photo;
+    try {
+        photo = await resizePhoto(file);
+    } catch (err) {
+        return showFeedback(err.message, true);
+    }
+
+    const newStudent = {
+        id: Date.now(),
+        firstName: value('firstname'),
+        lastName: value('lastname').toUpperCase(),
+        matricule,
+        phone: value('phone'),
+        photo
     };
-    reader.readAsDataURL(file);
+    students.push(newStudent);
+
+    if (!saveData()) {
+        students.pop();
+        return showFeedback("Mémoire du navigateur pleine : supprime des membres pour en ajouter d'autres.", true);
+    }
+
+    form.reset();
+    fileNameLabel.textContent = "Ajouter une photo";
+    searchBar.value = '';
+    render();
+    showFeedback(`${newStudent.firstName} ${newStudent.lastName} a été ajouté(e).`);
 });
 
 // 8. ACTIONS DES BOUTONS
-voiceBtn.onclick = () => {
-    if (recognition) recognition.start();
-    else alert("Votre navigateur ne supporte pas la voix.");
-};
+voiceBtn.addEventListener('click', () => {
+    if (recognition) listen(0);
+    else speakAndShow("Votre navigateur ne supporte pas la reconnaissance vocale. Essayez avec Chrome ou Edge.");
+});
 
 window.closeAI = () => {
     aiOverlay.style.display = 'none';
-    render(); // Réaffiche tout le monde après une recherche
 };
 
+searchBar.addEventListener('input', render);
+
 // Afficher le nom du fichier sélectionné
-photoInput.onchange = () => {
-    const fileName = photoInput.files[0]?.name || "Ajouter une photo";
-    document.getElementById('photo-label').innerText = "📸 " + fileName;
-};
+photoInput.addEventListener('change', () => {
+    fileNameLabel.textContent = photoInput.files[0]?.name || "Ajouter une photo";
+});
+
+// 9. MODE HORS LIGNE (PWA)
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => { /* l'app marche aussi sans */ });
+    });
+}
 
 // Lancement initial
 render();

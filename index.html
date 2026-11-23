@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="icons/icon-192.png">
+    <link rel="apple-touch-icon" href="icons/icon-192.png">
     <meta name="theme-color" content="#6366f1">
     <link rel="stylesheet" href="style.css">
     <title>Annuaire Vocal Intelligent</title>
@@ -14,7 +16,7 @@
             <div class="header-content">
                 <h1>IA Annuaire Groupe 12</h1>
                 <div class="search-container">
-                    <input type="text" id="search-bar" placeholder="Rechercher (ex: '22V...')">
+                    <input type="text" id="search-bar" placeholder="Rechercher (nom, matricule, téléphone)" aria-label="Rechercher un membre">
                 </div>
                 <div class="status-bar">
                     <span id="counter">0 membre(s)</span>
@@ -33,7 +35,7 @@
                     </div>
                     
                     <div class="upload-zone">
-                        <input type="file" id="photo" accept="image/*" required>
+                        <input type="file" id="photo" accept="image/*">
                         <label for="photo" id="photo-label">
                             <span class="icon">📸</span>
                             <span id="file-name">Ajouter une photo</span>
@@ -42,19 +44,19 @@
                     
                     <button type="submit" id="submit-btn">Enregistrer</button>
                 </form>
-                <div id="ia-feedback" class="ia-alert" style="display:none;"></div>
+                <div id="ia-feedback" class="ia-alert" role="status" style="display:none;"></div>
             </section>
 
             <div id="student-list" class="student-grid"></div>
         </main>
 
         <!-- Commandes Vocales -->
-        <button id="voice-btn" class="mic-btn" title="Parler à l'IA">🎤</button>
+        <button type="button" id="voice-btn" class="mic-btn" title="Parler à l'IA" aria-label="Commande vocale">🎤</button>
         
         <div id="ai-response-overlay" class="overlay" style="display:none;">
             <div class="ai-bubble">
                 <p id="ai-text-output"></p>
-                <button onclick="closeAI()" class="btn-close">D'accord</button>
+                <button type="button" onclick="closeAI()" class="btn-close">D'accord</button>
             </div>
         </div>
     </div>
